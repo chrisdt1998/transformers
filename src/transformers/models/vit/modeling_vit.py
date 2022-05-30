@@ -282,6 +282,17 @@ class ViTAttention(nn.Module):
     def prune_heads(self, heads: Set[int]) -> None:
         if len(heads) == 0:
             return
+        if self.attention is None:
+            return
+
+        all_pruned = self.pruned_heads.union(heads)
+        if len(all_pruned) == self.attention.num_attention_heads:
+            self.attention = None
+            self.output.dense = None
+            # Update hyper params and store pruned heads
+            self.pruned_heads = all_pruned
+            return
+
         heads, index = find_pruneable_heads_and_indices(
             heads, self.attention.num_attention_heads, self.attention.attention_head_size, self.pruned_heads
         )
