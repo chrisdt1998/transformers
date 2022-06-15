@@ -166,6 +166,11 @@ class ImageFeatureExtractionMixin:
 
         if isinstance(image, PIL.Image.Image):
             image = self.to_numpy_array(image)
+            # print(image)
+            # print(image.shape)
+            # print(image.ndim)
+            # print(image.shape[0] in [1, 3])
+
 
         if isinstance(image, np.ndarray):
             if not isinstance(mean, np.ndarray):
@@ -179,7 +184,8 @@ class ImageFeatureExtractionMixin:
                 mean = torch.tensor(mean)
             if not isinstance(std, torch.Tensor):
                 std = torch.tensor(std)
-
+        # if image.ndim != 3:
+        #     image = np.stack([image, image, image])
         if image.ndim == 3 and image.shape[0] in [1, 3]:
             return (image - mean[:, None, None]) / std[:, None, None]
         else:

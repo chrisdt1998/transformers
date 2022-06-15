@@ -265,9 +265,9 @@ class ViTSelfOutput(nn.Module):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
-
-        hidden_states = self.dense(hidden_states)
-        hidden_states = self.dropout(hidden_states)
+        if self.dense:
+            hidden_states = self.dense(hidden_states)
+            hidden_states = self.dropout(hidden_states)
 
         return hidden_states
 
@@ -285,8 +285,11 @@ class ViTAttention(nn.Module):
         if self.attention is None:
             return
 
+        # self.attention.num_attention_heads = 12
+
         all_pruned = self.pruned_heads.union(heads)
-        if len(all_pruned) == self.attention.num_attention_heads:
+        print(len(all_pruned), self.attention.num_attention_heads, all_pruned, heads)
+        if len(all_pruned) == 12:
             self.attention = None
             self.output.dense = None
             # Update hyper params and store pruned heads
@@ -314,11 +317,16 @@ class ViTAttention(nn.Module):
         head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
+        if self.attention is None:
+            # print('true', (self.output(None, hidden_states),))
+            return (self.output(None, hidden_states),)
+
         self_outputs = self.attention(hidden_states, head_mask, output_attentions)
 
         attention_output = self.output(self_outputs[0], hidden_states)
 
         outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
+        # print('false', outputs)
         return outputs
 
 
@@ -346,10 +354,11 @@ class ViTOutput(nn.Module):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
-        hidden_states = self.dense(hidden_states)
-        hidden_states = self.dropout(hidden_states)
+        if self.dense:
+            hidden_states = self.dense(hidden_states)
+            hidden_states = self.dropout(hidden_states)
 
-        hidden_states = hidden_states + input_tensor
+            hidden_states = hidden_states + input_tensor
 
         return hidden_states
 
@@ -373,23 +382,34 @@ class ViTLayer(nn.Module):
         head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
+        # print(hidden_states)
+        # print("1")
+        # print(self.layernorm_before(hidden_states))
         self_attention_outputs = self.attention(
             self.layernorm_before(hidden_states),  # in ViT, layernorm is applied before self-attention
             head_mask,
             output_attentions=output_attentions,
         )
+        # print(self_attention_outputs)
         attention_output = self_attention_outputs[0]
         outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
 
+
         # first residual connection
-        hidden_states = attention_output + hidden_states
+        # print(attention_output)
+        # print(hidden_states)
+        if attention_output is not None:
+            hidden_states = attention_output + hidden_states
 
         # in ViT, layernorm is also applied after self-attention
         layer_output = self.layernorm_after(hidden_states)
-        layer_output = self.intermediate(layer_output)
+        if self.intermediate is None:
+            intermediate_output = None
+        else:
+            intermediate_output = self.intermediate(layer_output)
 
         # second residual connection is done here
-        layer_output = self.output(layer_output, hidden_states)
+        layer_output = self.output(intermediate_output, hidden_states)
 
         outputs = (layer_output,) + outputs
 
@@ -439,7 +459,11 @@ class ViTEncoder(nn.Module):
             hidden_states = layer_outputs[0]
 
             if output_attentions:
-                all_self_attentions = all_self_attentions + (layer_outputs[1],)
+                if len(layer_outputs) > 1:
+                    all_self_attentions = all_self_attentions + (layer_outputs[1],)
+                else:
+                    all_self_attentions = all_self_attentions + (None,)
+                # all_self_attentions = all_self_attentions + (layer_outputs[1],)
 
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
